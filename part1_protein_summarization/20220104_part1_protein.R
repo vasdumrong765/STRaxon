@@ -1,5 +1,6 @@
 ## Dumrongprechachan et al 2022
 ## Part 1 Protein Summarization
+## For MSstatsTMT 2.0 and above (modified in Jan 2022)
 
 ## start up library
 library(tidyverse)
@@ -21,7 +22,7 @@ source("/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive//Rfunctions/plot_labe
 library(ComplexHeatmap)
 library(mclust)
 
-setwd('/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive/Project_STRaxon/analysis_code')
+setwd('/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive/Project_STRaxon/analysis_v2')
 
 #########################
 ## Load data - STR axon flow through SwissProt only
@@ -34,7 +35,9 @@ raw.pd_frac <- read.table("part1_protein_summarization/04162021_STRaxon_flowthro
   # remove entries with quant info excluded by method
   dplyr::filter(Quan.Info == '') %>%
   # 1% peptide FDR
-  dplyr::filter(Percolator.q.Value < 0.01)
+  dplyr::filter(Percolator.q.Value < 0.01) %>%
+  # remove shared peptides
+  dplyr::filter((!grepl(";", `Master.Protein.Accessions`)))
 
 
 # Read PD protein tabs into R
@@ -62,8 +65,9 @@ input.pd <- PDtoMSstatsTMTFormat(raw.pd_frac,
                                  rmPSM_withfewMea_withinRun = TRUE, #features with 1-2 measurements
                                  rmProtein_with1Feature = TRUE,
                                  summaryforMultipleRows = sum)
+
 # Removed features/PSMs that are shared between multiple proteins (PSMs with multiple Uniprot entries)
-input.pd <- input.pd %>% filter(!grepl(";", ProteinName))
+# input.pd <- input.pd %>% filter(!grepl(";", ProteinName))
 
 
 
@@ -83,7 +87,7 @@ quant.msstats0 <- proteinSummarization(input.pd,
                                        maxQuantileforCensored = NULL)
 
 # remove negative log2 abundance after normalization
-quant.msstats0 <- quant.msstats0 %>% dplyr::filter(Abundance > 0)
+# quant.msstats0$ <- quant.msstats0 %>% dplyr::filter(Abundance > 0)
 
 
 ##################################################
@@ -92,7 +96,7 @@ quant.msstats0 <- quant.msstats0 %>% dplyr::filter(Abundance > 0)
 # Remove proteins that are not positively enriched over the IP control background (Cre-negative samples)
 # This list focuses only on the STR P18 samples
 
-levels(droplevels(quant.msstats0$Condition))
+# levels(droplevels(quant.msstats0$Condition))
 #create a comparison matrix
 comparison1 <- matrix(c(-1, 1,  0, 0, 0, 0, 0,
                          0, 0, -1, 0, 0, 1, 0),
@@ -112,32 +116,31 @@ test.contrast1 <- groupComparisonTMT(data = quant.msstats0,
                                      remove_empty_channel = TRUE)
 
 # volcano plot for filter 1
-volcano_df1 <- ggplot(data = test.contrast1,
+volcano_df1 <- ggplot(data = test.contrast1$ComparisonResult,
                       aes(x = log2FC, y = (-1)*log10(adj.pvalue))) +
   geom_point(size = 0.5, show.legend = FALSE) + 
   scale_colour_manual(values = c("black", "red")) +
   geom_hline(yintercept = (-1)*log10(0.005), linetype = "dotted", size = 0.6) +
   geom_vline(xintercept = log2(2.5), linetype = "dotted", size = 0.6) +
   facet_wrap(~Label, scale = "free", ncol = 6)
-
 volcano_df1
 
 # impose some cutoff in P18-STR_negative
 # proteins must have 2.5 fold change over the Cre-negative control in 
-# must have q-value < 0.01
+# must have q-value < 0.005
 
-non_specific_enrich <- test.contrast1 %>%
+non_specific_enrich <- test.contrast1$ComparisonResult %>%
   dplyr::filter(Label == 'P18-STR_negative') %>%
   dplyr::filter(adj.pvalue >= 0.005 | (log2FC < log2(2.5)))
 
 
 # remarks - for protein with One Condition Missing
 # is that condition missing in the Cre-negative control samples?
-protein_missing_OneCondition <- test.contrast1 %>%
+protein_missing_OneCondition <- test.contrast1$ComparisonResult %>%
   dplyr::filter(Label == 'P18-STR_negative') %>%
   dplyr::filter(issue == 'oneConditionMissing')
 
-protein_missing_OneCondition_df <- quant.msstats0 %>%
+protein_missing_OneCondition_df <- quant.msstats0$ProteinLevelData %>%
   dplyr::filter(Condition %in% c('STR_negative', 'P18')) %>%
   dplyr::filter(Protein %in% protein_missing_OneCondition$Protein)
 
@@ -146,13 +149,13 @@ protein_missing_OneCondition_df <- quant.msstats0 %>%
 unique(protein_missing_OneCondition_df$Condition)
 
 # histogram of log2FC over control
-test.contrast1 %>%  ggplot(aes(x = log2FC)) +
+test.contrast1$ComparisonResult %>%  ggplot(aes(x = log2FC)) +
   geom_histogram(binwidth = 0.1) +
   facet_wrap(~Label) +
+  geom_vline(xintercept = 0, linetype = 'dotted') +
   #coord_cartesian(xlim = c(0,50)) +
   theme_bw() + theme(panel.border = element_rect(size=1), panel.grid.major = element_blank(),
                      panel.grid.minor = element_blank(), axis.line = element_blank())
-
 
 
 ##################################################
@@ -172,16 +175,17 @@ quant.msstats1 <- proteinSummarization(input.pd,
                                        MBimpute = FALSE,
                                        maxQuantileforCensored = NULL)
 
-tmp <- quant.msstats1 
+tmp <- quant.msstats1$ProteinLevelData
+
 # remove negative log2 abundance after normalization and non-specific enrichment
-quant.msstats1 <- tmp %>% 
+quant.msstats1$ProteinLevelData <- tmp %>% 
   dplyr::filter(Abundance > 0) %>%
   dplyr::filter(!(Protein %in% non_specific_enrich$Protein)) %>%
   dplyr::filter(!(Protein %in% protein_missing_OneCondition$Protein))
 rm(tmp)
 
 # remove Norm, CTX_negative, STR_negative samples
-quant.msstats1_wide <- quant.msstats1 %>%
+quant.msstats1_wide <- quant.msstats1$ProteinLevelData %>%
   dplyr::filter(!(Condition %in% c('Norm', 'CTX_negative', 'STR_negative'))) %>%
   dplyr::select(Protein, Abundance, BioReplicate) %>%
   pivot_wider(names_from = BioReplicate,
@@ -206,7 +210,7 @@ colors = c(rep('gray75',5),
            rep('steelblue4',3))
 boxplot(quant.msstats1_wide[,-1], col = colors)
 
-# protein-level median normalization and Limma-based batch effect correction
+# protein-level median subtraction and Limma-based batch effect correction
 # MSstatsTMT Abundance already in log2
 
 # batch information
@@ -216,8 +220,11 @@ batch_colors <- c(1, 1, 2, 2, 2,
                   1, 1, 1, 2, 2,
                   1, 1, 2)
 
+#quant.msstats1_wide_med <- removeBatchEffect(x = quant.msstats1_wide[,-1],
+#                                             batch = batch_colors) %>% med_norm() %>% data.frame()
+
 quant.msstats1_wide_med <- removeBatchEffect(x = quant.msstats1_wide[,-1],
-                                             batch = batch_colors) %>% med_norm() %>% data.frame()
+                                             batch = batch_colors) %>% med_subtraction() %>% data.frame()
 
 quant.msstats1_wide_med <- cbind(quant.msstats1_wide[,1], quant.msstats1_wide_med)
 colnames(quant.msstats1_wide_med)[1] <- 'Protein'
@@ -243,24 +250,30 @@ boxplot(quant.msstats1_wide_med[,-1], col = batch_colors)
 # no NA for heatmap
 # Looks like samples of the sample condition clustered together!
 heatmap_quant.msstats1_med <- quant.msstats1_wide_med %>% drop_na()
-Heatmap(matrix = as.matrix(heatmap_quant.msstats1_med[,-1]), show_row_names = FALSE, split = 8)
+Heatmap(matrix = as.matrix(heatmap_quant.msstats1_med[,-1]), show_row_names = FALSE)
+#Heatmap(matrix = as.matrix(heatmap_quant.msstats1_med[,-1]), show_row_names = FALSE, split = 8)
 
 
 # ready for MSstatsTMT comparison
 # convert data back to long format
-quant.msstats1_wide_med_long <- pivot_longer(quant.msstats1_wide_med,
-                                               cols = -Protein,
-                                               names_to = 'BioReplicate',
-                                               values_to = 'Abundance')
-quant.msstats1_wide_med_long <- merge(quant.msstats1_wide_med_long,
-                                        quant.msstats1[,-3], # remove original Abundance column
-                                        by=c('Protein','BioReplicate'))
+tmp2 <- pivot_longer(quant.msstats1_wide_med,
+                     cols = -Protein,
+                     names_to = 'BioReplicate',
+                     values_to = 'Abundance')
+
+tmp2 <- merge(tmp2,
+              quant.msstats1$ProteinLevelData[,-6], # remove original Abundance column
+              by=c('Protein','BioReplicate'))
+
+quant.msstats1_wide_med_long <- quant.msstats1
+quant.msstats1_wide_med_long$ProteinLevelData <- tmp2
+rm(tmp2)
 
 ##################################################
 ## Filter 2 - Define axon-enriched proteins
 ##################################################
 
-levels(droplevels(quant.msstats1_wide_med_long$Condition))
+# levels(droplevels(quant.msstats1_wide_med_long$Condition))
 
 #create a comparison matrix
 comparison2 <- matrix(c(-1, 0, 0, 1, 0),
@@ -276,20 +289,20 @@ test.contrast2 <- groupComparisonTMT(data = quant.msstats1_wide_med_long,
                                      remove_norm_channel = FALSE,
                                      remove_empty_channel = TRUE)
 
-# volcano plot for filter 2
-volcano_df2 <- ggplot(data = test.contrast2,
+# volcano plot for filter 2 - STR P18 vs CTX_P18
+volcano_df2 <- ggplot(data = test.contrast2$ComparisonResult,
                       aes(x = log2FC, y = (-1)*log10(adj.pvalue))) +
   geom_point(size = 0.5, show.legend = FALSE) + 
   scale_colour_manual(values = c("black", "red")) +
   geom_hline(yintercept = (-1)*log10(0.05), linetype = "dotted", size = 0.6)
-
 volcano_df2
 
 # axon enriched proteins are those with log2FC > 0 & adj.pvalue < 0.05
-axon_enrich_protein <- test.contrast2 %>%
+axon_enrich_protein <- test.contrast2$ComparisonResult %>%
   dplyr::filter(log2FC > 0) %>%
   dplyr::filter(adj.pvalue < 0.05)
 
+#write.csv(test.contrast2$ComparisonResult, file = 'part1_protein_summarization/20220130_test_contrast2.csv', row.names = FALSE)
 
 ##################################################
 ## Normalized full dataset for Anastasia
@@ -327,12 +340,13 @@ mapped_ID <-  raw.protein.pd_frac %>%
 STRaxon_full_proteome <- merge(x=STRaxon_full_proteome,
                                y=mapped_ID, by.x="Protein", by.y = "Accession")
 
+#write.csv(STRaxon_full_proteome, file = 'part1_protein_summarization/20220130_STRaxon_full_proteome.csv', row.names = FALSE)
 
 ##################################################
 ## CV calculations
 ##################################################
 
-CV_values <- quant.msstats1_wide_med_long %>% group_by(Protein, Condition) %>%
+CV_values <- quant.msstats1_wide_med_long$ProteinLevelData %>% group_by(Protein, Condition) %>%
   summarise(cond_avg = mean(Abundance, na.rm=TRUE), cond_sd = sd(Abundance, na.rm=TRUE)) %>%
   mutate(cond_cv = cond_sd*100/cond_avg)
 
@@ -355,7 +369,7 @@ CV_values %>%
 # CV density plots
 CV_values %>% ggplot(aes(x = cond_cv, color = Condition)) +
   geom_density() +
-  scale_colour_manual(values = my_colors) +
+  #scale_colour_manual(values = my_colors) +
   xlab('% CV') +
   coord_cartesian(xlim = c(0, 50)) +
   ggtitle("CV distributions") +
@@ -371,12 +385,16 @@ CV_values %>% ggplot(aes(x = cond_cv, color = Condition)) +
 # calculate -log10(FDR)
 # sort by Fold.Enrichment
 
-GOCC_axon <- read.table("part1_protein_summarization/DAVID_20210801/enriched_CC.txt", sep = '\t', header = TRUE) %>% 
+#GOCC_axon <- read.table("part1_protein_summarization/20220131_DAVID_results/20220131_GO_cc_STRaxon_2.5FC.txt", 
+GOCC_axon <- read.table("part1_protein_summarization/20220215_DAVID_fig3/STR_GO_CC.txt",                       
+                        sep = '\t', header = TRUE) %>% 
   mutate(logFDR = -log10(FDR)) %>%
   arrange(desc(logFDR)) %>%
   separate(Term, c('GO_accession', 'Term'), sep='~')
 
-GOCC_nonaxon <-  read.table("part1_protein_summarization/DAVID_20210801/unenriched_CC.txt", sep = '\t', header = TRUE) %>% 
+#GOCC_nonaxon <-  read.table("part1_protein_summarization/20220131_DAVID_results/20220131_GO_cc_CTXh2b_2.5FC.txt", 
+GOCC_nonaxon <-  read.table("part1_protein_summarization/20220215_DAVID_fig3/CTX_GO_CC.txt", 
+                            sep = '\t', header = TRUE) %>% 
   mutate(logFDR = -log10(FDR)) %>%
   arrange(desc(logFDR)) %>%
   separate(Term, c('GO_accession', 'Term'), sep='~')
@@ -392,7 +410,7 @@ ggplot(GOCC_axon_topterm, aes(x = Term, y = Fold.Enrichment)) +
     geom_hline(yintercept = 1, linetype="dashed", color = "azure4", size=.5) +
     geom_point(aes(x = Term, y = Fold.Enrichment,size = Count, colour = logFDR), alpha=.7) +
   scale_x_discrete(limits = GOCC_axon_topterm$Term) +
-  scale_color_gradient(low = "dodgerblue2", high = "coral2", limits=c(0, NA)) +
+  scale_color_gradient(low = "dodgerblue2", high = "coral2", limits=c(0, 20)) +
   coord_flip() +
   theme_bw() +
   theme(axis.ticks.length=unit(-0.1, "cm"),
@@ -410,7 +428,7 @@ ggplot(GOCC_nonaxon_topterm, aes(x = Term, y = Fold.Enrichment)) +
   geom_hline(yintercept = 1, linetype="dashed", color = "azure4", size=.5) +
   geom_point(aes(x = Term, y = Fold.Enrichment,size = Count, colour = logFDR), alpha=.7) +
   scale_x_discrete(limits = GOCC_nonaxon_topterm$Term) +
-  scale_color_gradient(low = "dodgerblue2", high = "coral2", limits=c(0, NA)) +
+  scale_color_gradient(low = "dodgerblue2", high = "coral2", limits=c(0, 20)) +
   coord_flip() +
   theme_bw() +
   theme(axis.ticks.length=unit(-0.1, "cm"),
@@ -428,7 +446,7 @@ ggplot(GOCC_nonaxon_topterm, aes(x = Term, y = Fold.Enrichment)) +
 ## Tally axonal proteins
 ##################################################
 
-uniprot_mapped_axon_enriched <- read_excel("part1_protein_summarization/uniprot_20210826_STRaxon_all_tally_for_axon.xlsx") %>%
+uniprot_mapped_axon_enriched <- read_excel("part1_protein_summarization/uniprot_20220131_STRaxon_all_tally_for_axon.xlsx") %>%
   mutate(quick_axon = grepl(pattern = 'axon', `Gene ontology (cellular component)`)) %>%
   mutate(quick_presy = grepl(pattern = 'presynap', `Gene ontology (cellular component)`)) %>%
   mutate(quick_gcone = grepl(pattern = 'growth cone', `Gene ontology (cellular component)`)) %>%
@@ -446,7 +464,7 @@ uniprot_mapped_axon_enriched <- read_excel("part1_protein_summarization/uniprot_
 ## volcano plot for filter 2
 ##################################################
 
-test.contrast2_mapped <- merge(test.contrast2, mapped_ID,
+test.contrast2_mapped <- merge(test.contrast2$ComparisonResult, mapped_ID,
                                by.x="Protein", by.y="Accession") %>%
   filter(!is.na(adj.pvalue)) %>%
   plot_label(FCvalue = 5,
@@ -505,6 +523,13 @@ volcano_df2_label <- test.contrast2_mapped %>%
                   segment.size = 0.5, #segment line thickness
                   size=4, fontface = 'italic')
 volcano_df2_label
+
+#STR enriched + GOaxon
+num_str_enriched <- dplyr::filter(test.contrast2_mapped, (adj.pvalue < 0.05 & log2FC > 0))
+num_str_enriched_axon <- sum(num_str_enriched$axon_tally)
+
+num_ctx_enriched <- dplyr::filter(test.contrast2_mapped, !(adj.pvalue < 0.05 & log2FC > 0))
+num_ctx_enriched_axon <- sum(num_ctx_enriched$axon_tally)
 
 
 ##################################################
@@ -592,4 +617,4 @@ test.contrast2_mapped_rank %>%
 STRaxon_full_proteome_noNA <- STRaxon_full_proteome %>%
   drop_na(plex1.neonate1:plex2.adult5)
 
-#write_csv(STRaxon_full_proteome_noNA, file = "/Users/vasdumrong/Box/VasD_projects/Project_STRaxon/analysis/FT_SwissProt_only/20211020_STRaxon_full_proteome_noNA_2276.csv")
+#write.csv(STRaxon_full_proteome_noNA, file = 'part1_protein_summarization/20220130_STRaxon_full_proteome_noNA.csv', row.names = FALSE)
