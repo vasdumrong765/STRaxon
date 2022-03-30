@@ -12,7 +12,7 @@ library(readr)
 library(XML)
 # cplex 
 path_to_executable_solver <- 'C:/Program Files/IBM/ILOG/CPLEX_Studio201/cplex/bin/x64_win64/cplex.exe'
-setwd('E:/Vas/Data_analysis/PHONEMES_straxon/straxon_GSK3b_Fyn_Cdk5/')
+setwd('E:/Vas/Data_analysis/20220203_PHONEMES_update/')
 
 # Loading database and data-object
 load(file = "dataGMM_STRaxon.RData")
