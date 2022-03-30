@@ -2,7 +2,7 @@ library(tidyverse)
 library(limma)
 library(OmnipathR)
 library(readxl)
-setwd('E:/Vas/Data_analysis/PHONEMES_straxon/straxon_GSK3b_Fyn_Cdk5/')
+setwd('E:/Vas/Data_analysis/20220203_PHONEMES_update/')
 
 #########################
 ## Prerequisite 1: Use OmpipathR to build kinase-substrate Network for the mouse proteome
@@ -63,9 +63,6 @@ allD$S.cc <- as.character(allD$S.cc)
 # write.csv(allD, file = 'allD_mouse.csv' ,row.names = FALSE)
 
 
-
-
-
 #########################
 ## Prerequisite 2: Build GMMres object class from data
 #########################
@@ -76,12 +73,12 @@ allD$S.cc <- as.character(allD$S.cc)
 # 2.1
 # Prepare data.IDmap
 # Load data without FC calculation or q-values
-straxon_data <- read_csv(file = './rawd/20211114_unpacked_modResidue.csv' , col_names = TRUE)
+straxon_data <- read_tsv('./rawd/20220201_phosphopeptide_STRaxon_full_ALL_8clusters_maSigPro_v3.tsv')
 
-straxon_data$FirstmodResidue <- str_extract(straxon_data$modResidue, pattern = '([^;]+)')
-straxon_data$First_site <- substr(straxon_data$FirstmodResidue, start = 1, stop = 1)
-straxon_data$First_ResNum <- str_extract(straxon_data$FirstmodResidue, pattern = '[0-9]+')
-straxon_data$countPhos <- str_count(straxon_data$modResidue, ';') + 1
+#straxon_data$FirstmodResidue <- str_extract(straxon_data$modResidue, pattern = '([^;]+)')
+#straxon_data$First_site <- substr(straxon_data$FirstmodResidue, start = 1, stop = 1)
+#straxon_data$First_ResNum <- str_extract(straxon_data$FirstmodResidue, pattern = '[0-9]+')
+straxon_data$countMod <- str_count(straxon_data$Modifications.in.Master.Proteins, ';') + 1
 
 targets_axon <- data.frame(c('neonate_1', 'neonate_2', 'neonate_3', 'neonate_4', 'neonate_5',
     'earlypostnatal_1', 'earlypostnatal_2', 'earlypostnatal_3', 
@@ -93,15 +90,15 @@ targets_axon$Condition <- str_extract(targets_axon[,1], pattern = '^[^_]+(?=_)')
 colnames(targets_axon) <- c('sample', 'condition')
 
 # get the uniprot mapping for straxon_data
-straxon_uniprotmapping <- read_excel('./rawd/20211114_modResidue_uniprotmapping.xlsx')
+straxon_uniprotmapping <- read_excel('./rawd/20220203_phosphoprot_Uniprot_mapped.xlsx')
 straxon_data <- merge(straxon_data, straxon_uniprotmapping[, c(2,3,6)], 
-                      by.x = 'Master Protein Accessions', by.y = 'Entry')
+                      by.x = 'prot', by.y = 'Entry')
 
 # reformat to create data.IDmap
-straxon_data_reformat <- straxon_data[, c(1, 65:70, 7:25)]
+straxon_data_reformat <- straxon_data[, c(1:5, 28:29, 31:36, 6:25)]
 straxon_data_reformat$phosID <- paste0(straxon_data_reformat$`Entry name`,'_',
                                        straxon_data_reformat$FirstmodResidue,'_',
-                                       straxon_data_reformat$countPhos)
+                                       straxon_data_reformat$countMod)
 straxon_data_reformat$Prot_site <- paste0(straxon_data_reformat$`Entry name`,'_',
                                           straxon_data_reformat$FirstmodResidue)
 
@@ -134,7 +131,7 @@ contrast <- makeContrasts(EarlypostnatalvsNeonate = earlypostnatal-neonate,
 contrast
 
 # do the linear model fitting
-data_limma <- straxon_data[,c(7:26)]
+data_limma <- straxon_data_reformat[,c(14:33)]
 colnames(data_limma) <- targets_axon$sample
 
 fit <- lmFit(data_limma, design)
@@ -156,6 +153,8 @@ tmp3 <- topTable(fit2, coef='AdultvsNeonate',
 tmp1$PhosID <- straxon_data_reformat$phosID
 tmp2$PhosID <- straxon_data_reformat$phosID
 tmp3$PhosID <- straxon_data_reformat$phosID
+
+#save(tmp1, tmp2, tmp3, file = 'RData_tmp1to3.RData')
 
 
 # log2FC
