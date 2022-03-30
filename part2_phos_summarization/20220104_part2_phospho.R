@@ -7,28 +7,8 @@ library(readxl)
 library(robustbase)
 library(limma)
 library(ComplexHeatmap)
-setwd('/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive/Project_STRaxon/analysis_code')
-
-# function to do median intensity normalization wide format data
-# adapted from P. Wilmart code 
-med_norm <- function(df, print_factors = TRUE) {
-  # Normalizes each channel's sum to the average grand total
-  # df: data frame of TMT data (one column for each channel)
-  # print_factors: logical to control printing
-  
-  # compute norm factors and scale columns
-  norm_facs <- mean(colMedians(as.matrix(df), na.rm=TRUE), na.rm=TRUE) / 
-    colMedians(as.matrix(df),na.rm=TRUE)
-  df_med  <- sweep(df, 2, norm_facs, FUN = "*")
-  
-  # print the normalization factors for QC check
-  if (print_factors == TRUE) {
-    cat("\nMedian Normalization Factors:\n ")
-    cat(sprintf("%s - %0.3f\n", colnames(df), norm_facs))
-  }
-  
-  df_med # return normalized data
-}
+source("/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive/Rfunctions/med_SL_norm.R")
+setwd('/Volumes/GoogleDrive/My Drive/Vas_Klab_GoogleDrive/Project_STRaxon/analysis_v2')
 
 
 #########################
@@ -67,7 +47,11 @@ colnames(raw.phospeptide.pd)[16:47] <- sample_names$columns
 #########################
 
 # Only retain peptides associated with filtered proteins
-STRaxon_full_proteome <- read.table(file = 'part2_phos_summarization/20210811_STRaxon_full_proteome.txt', sep = '\t', header = TRUE) %>% data.frame()
+# STRaxon_full_proteome <- read.table(file = 'part2_phos_summarization/20210811_STRaxon_full_proteome.txt', sep = '\t', header = TRUE) %>% data.frame()
+
+STRaxon_full_proteome <- read_csv(file = 'part2_phos_summarization/20220130_STRaxon_full_proteome.csv') %>% data.frame()
+
+
 
 #########################
 ## Perform peptide and batch normalization
@@ -104,8 +88,12 @@ raw.phospeptide.pd_norm <- raw.phospeptide.pd_norm[,-c(19,31:34)]
 # batch information
 # Intensity must be in log2 before batch correction and med_norm()
 batch_colors <- c(rep(1,12), rep(2,11))
+
+#phospep_norm_temp <- removeBatchEffect(x = log2(raw.phospeptide.pd_norm[,c(7:29)]),
+#                                       batch = batch_colors) %>% med_norm()
+
 phospep_norm_temp <- removeBatchEffect(x = log2(raw.phospeptide.pd_norm[,c(7:29)]),
-                                       batch = batch_colors) %>% med_norm()
+                                       batch = batch_colors) %>% med_subtraction()
 
 # assign normalized corrected log2 intensity to the dataframe
 raw.phospeptide.pd_norm[,c(7:29)] <- phospep_norm_temp
@@ -168,9 +156,9 @@ heatmap_phospho_STRaxon <- raw.phospeptide.pd_norm[,c(6:25)] %>% drop_na()
 colnames(heatmap_phospho_STRaxon) 
 Heatmap(matrix = as.matrix(heatmap_phospho_STRaxon), show_row_names = FALSE)
 
-# 2686 proteins
+# 2709 proteins
 # 1864 phosphoproteins
-# 1108 phosphoproteins in proteins
+# 1124 phosphoproteins in proteins
 length(unique(STRaxon_full_proteome$Protein))
 length(unique(raw.phospeptide.pd_norm$`Master Protein Accessions`))
 length(unique(phosphopeptide_STRaxon_full$`Master Protein Accessions`))
@@ -180,3 +168,13 @@ length(unique(phosphopeptide_STRaxon_full$`Master Protein Accessions`))
 # write.table(phosphopeptide_STRaxon_full,
 #            file = '/Users/vasdumrong/Box/VasD_projects/Project_STRaxon/analysis/Phospho_MS2/20210811_phosphopeptide_STRaxon_full.txt',
 #            sep = '\t', row.names = FALSE)
+
+#write.csv(phosphopeptide_STRaxon_full, file = 'part2_phos_summarization/20220131_phosphopeptide_STRaxon_full.csv')
+
+
+
+
+
+
+
+
